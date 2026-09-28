@@ -1,59 +1,71 @@
-import React from "react";
-import { MODELS } from "../config";
+import React, { useEffect, useState } from "react";
 
-interface Props {
-  selectedModel: string;
-  onModelChange: (model: string) => void;
+interface ModelInfo {
+  id: string;
+  label: string;
+  provider: "anthropic" | "openai";
+  supportsStreaming: boolean;
+  supportsNonStreaming: boolean;
 }
 
-function ModelSelector({ selectedModel, onModelChange }: Props) {
-  const isClaudeModel =
-    selectedModel.startsWith("claude-opus") ||
-    selectedModel.startsWith("claude-sonnet");
+export default function ModelSelector({
+  selected,
+  onSelect,
+}: {
+  selected: string;
+  onSelect: (id: string) => void;
+}) {
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [newModels, setNewModels] = useState<string[]>([]);
+
+  async function loadModels() {
+    const res = await fetch("/models");
+    const data = await res.json();
+    setModels(data);
+  }
+
+  async function checkUpdates() {
+    const res = await fetch("/models/check-updates");
+    const data = await res.json();
+    if (data.updated) {
+      setNewModels([
+        ...data.newAnthropicModels,
+        ...data.newOpenAIModels,
+      ]);
+    }
+  }
+
+  useEffect(() => {
+    loadModels();
+    checkUpdates();
+  }, []);
 
   return (
-    <div style={{ marginBottom: "20px" }}>
-      <h2>Select Model</h2>
-
-      {isClaudeModel && (
+    <div style={{ marginBottom: "1rem" }}>
+      {newModels.length > 0 && (
         <div
           style={{
+            background: "#ffe9a8",
+            padding: "8px",
+            borderRadius: "6px",
             marginBottom: "10px",
-            padding: "10px",
-            border: "1px solid #e0b200",
-            background: "#fff8e1",
-            fontSize: "14px",
-            borderRadius: "4px"
           }}
         >
-          <strong>Claude Model Notice:</strong><br />
-          You are using <code>{selectedModel}</code>.  
-          Anthropic frequently releases new versions of Opus and Sonnet.  
-          Check their model documentation regularly — when <strong>Opus 6</strong> or
-          <strong>Sonnet 6</strong> becomes available, simply update your
-          <code>config.ts</code> model list.
+          New models available: {newModels.join(", ")}
         </div>
       )}
 
       <select
-        value={selectedModel}
-        onChange={(e) => onModelChange(e.target.value)}
-        style={{
-          padding: "8px",
-          fontSize: "16px",
-          marginTop: "10px",
-          width: "100%",
-          maxWidth: "300px"
-        }}
+        value={selected}
+        onChange={(e) => onSelect(e.target.value)}
+        style={{ padding: "8px", fontSize: "1rem" }}
       >
-        {MODELS.map((model) => (
-          <option key={model.id} value={model.id}>
-            {model.name}
+        {models.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.label} ({m.provider})
           </option>
         ))}
       </select>
     </div>
   );
 }
-
-export default ModelSelector;

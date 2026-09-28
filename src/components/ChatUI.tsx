@@ -1,96 +1,124 @@
 import React, { useState } from "react";
 
-interface Props {
-  model: string;
+interface Message {
+  role: "user" | "assistant";
+  content: string;
 }
 
-function ChatUI({ model }: Props) {
-  const [messages, setMessages] = useState<string[]>([]);
+export default function ChatUI() {
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [model, setModel] = useState("claude-opus-5.5");
+  const [streaming, setStreaming] = useState(true);
 
-  const sendMessage = () => {
-    if (!input.trim()) return;
+  async function sendNonStreaming() {
+    const res = await fetch("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages,
+      }),
+    });
 
-    // Add user message
-    setMessages((prev) => [...prev, `You: ${input}`]);
+    const data = await res.json();
 
-    // Placeholder model response (backend will replace this later)
     setMessages((prev) => [
       ...prev,
-      `${model}: (response will appear here once backend is connected)`
+      { role: "assistant", content: data.content },
     ]);
+  }
 
+  async function sendStreaming() {
+    const res = await fetch("/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages,
+      }),
+    });
+
+    const reader = res.body!.getReader();
+    let fullText = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = new TextDecoder().decode(value);
+      fullText += chunk;
+
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === "assistant") {
+          return [
+            ...prev.slice(0, -1),
+            { role: "assistant", content: fullText },
+          ];
+        }
+        return [...prev, { role: "assistant", content: chunk }];
+      });
+    }
+  }
+
+  async function sendMessage() {
+    const userMsg: Message = { role: "user", content: input };
+    setMessages((prev) => [...prev, userMsg]);
     setInput("");
-  };
 
-  // Detect Claude models (Opus 5.5, Sonnet 5, future versions)
-  const isClaudeModel =
-    model.startsWith("claude-opus") || model.startsWith("claude-sonnet");
+    if (streaming) {
+      await sendStreaming();
+    } else {
+      await sendNonStreaming();
+    }
+  }
 
   return (
-    <div style={{ marginTop: "20px" }}>
-      <h2>Chat</h2>
+    <div style={{ maxWidth: "700px", margin: "0 auto" }}>
+      <h2>AI Workspace</h2>
 
-      {isClaudeModel && (
-        <div
-          style={{
-            marginBottom: "10px",
-            padding: "10px",
-            border: "1px solid #e0b200",
-            background: "#fff8e1",
-            fontSize: "14px",
-            borderRadius: "4px"
-          }}
-        >
-          <strong>Claude Model Notice:</strong><br />
-          You are using <code>{model}</code>.  
-          Check Anthropic’s model documentation regularly — newer versions of
-          Opus or Sonnet may be available.  
-          When they release <strong>Opus 6</strong> or <strong>Sonnet 6</strong>,
-          simply update your <code>config.ts</code> model list.
-        </div>
-      )}
+      <div style={{ marginBottom: "1rem" }}>
+        <label>
+          <input
+            type="checkbox"
+            checked={streaming}
+            onChange={(e) => setStreaming(e.target.checked)}
+          />{" "}
+          Streaming mode
+        </label>
+      </div>
+
+      <div style={{ marginBottom: "1rem" }}>
+        <strong>Model:</strong> {model}
+      </div>
 
       <div
         style={{
           border: "1px solid #ccc",
-          padding: "10px",
-          height: "300px",
-          overflowY: "auto",
-          marginBottom: "10px",
-          background: "#fafafa"
+          padding: "1rem",
+          borderRadius: "8px",
+          minHeight: "200px",
+          marginBottom: "1rem",
         }}
       >
-        {messages.map((msg, index) => (
-          <div key={index} style={{ marginBottom: "8px" }}>
-            {msg}
+        {messages.map((m, i) => (
+          <div key={i} style={{ marginBottom: "0.5rem" }}>
+            <strong>{m.role}:</strong> {m.content}
           </div>
         ))}
       </div>
 
-      <input
+      <textarea
         value={input}
         onChange={(e) => setInput(e.target.value)}
-        placeholder="Type your message..."
-        style={{
-          width: "80%",
-          padding: "8px",
-          marginRight: "10px",
-          border: "1px solid #ccc"
-        }}
+        rows={3}
+        style={{ width: "100%", marginBottom: "1rem" }}
       />
 
-      <button
-        onClick={sendMessage}
-        style={{
-          padding: "8px 16px",
-          cursor: "pointer"
-        }}
-      >
+      <button onClick={sendMessage} style={{ padding: "10px 20px" }}>
         Send
       </button>
     </div>
   );
 }
 
-export default ChatUI;
